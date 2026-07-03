@@ -20,9 +20,7 @@ WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 
-RUN addgroup --system sonicrelay && adduser --system --ingroup sonicrelay sonicrelay
 COPY --from=build /app/publish ./
-RUN chown -R sonicrelay:sonicrelay /app
-USER sonicrelay
+USER $APP_UID
 
 ENTRYPOINT ["dotnet", "SonicRelay.Api.dll"]
