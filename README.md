@@ -16,20 +16,20 @@ SonicRelay existe para resolver um problema bem específico: transmitir o áudio
 
 ## Status atual
 
-Este projeto contém o backend e a infraestrutura base. Devices, sessions e signaling ainda têm contratos iniciais; autenticação já usa ASP.NET Core Identity real com persistência PostgreSQL.
+Este projeto já possui uma base funcional do backend/control-plane. A autenticação com ASP.NET Core Identity, sessões, códigos temporários e signaling WebSocket já têm implementação inicial real. Algumas áreas ainda são MVP/parciais, especialmente Devices e o contrato final do signaling.
 
 | Área | Status | Observação |
 | --- | --- | --- |
-| Solution .NET | ✅ Base criada | `SonicRelay.sln`, projetos de API, Domain, Application e Infrastructure. |
-| Minimal API | ✅ Skeleton | Startup com Swagger, health checks, auth policies, WebSockets e endpoints agrupados. |
+| Solution .NET | ✅ Base criada | `SonicRelay.sln`, projetos de API, Domain, Application, Infrastructure e testes de integração. |
+| Minimal API | ✅ Base criada | Startup com Swagger, health checks, auth policies, rate limiting, WebSockets e endpoints agrupados. |
 | PostgreSQL | ✅ Infra base | EF Core/Npgsql configurado via `AppDbContext`. |
-| Redis | ✅ Infra base | Usado para cache/session code store no desenho atual. |
-| Devices | 🟡 Contrato inicial | Endpoints e domínio base. |
-| Sessions | 🟡 Contrato inicial | Endpoints e modelos base. |
-| WebSocket signaling | 🟡 Skeleton | Endpoint autenticado criado, roteamento real ainda pendente. |
-| Identity/Auth real | ✅ Implementado | Identity + EF Core/PostgreSQL, access token opaco, refresh token e endpoints protegidos. |
+| Redis | ✅ Infra base | Usado para cache/session code store com TTL. |
+| Identity/Auth real | ✅ Implementado | ASP.NET Core Identity API endpoints, bearer token, refresh token e `/auth/me`. |
+| Devices | 🟡 Stub/pendente | Rotas existem, mas ainda precisam persistir/listar/alterar/revogar devices de verdade. |
+| Sessions | 🟢 MVP funcional | Criação de sessão, código temporário, join, limite de viewers, rotação de código, expiração e cleanup. |
+| WebSocket signaling | 🟡 MVP funcional | Endpoint autenticado valida sessão/device/participant e roteia mensagens WebRTC; ainda precisa fortalecer envelope/contrato. |
 | WebRTC media | 🔴 Fora deste repo | A mídia deve ficar nos apps Windows/Flutter, não no backend. |
-| CI/CD VPS | ✅ Base criada | Workflow separado em build, test, publish image e deploy over SSH. |
+| CI/CD VPS | ✅ Base criada | Workflow separado em build, test, publish image e deploy over SSH; ainda precisa validação final de Docker/path. |
 
 ## Decisão técnica principal
 
