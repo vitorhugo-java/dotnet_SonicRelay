@@ -95,15 +95,28 @@ Before upgrade, the API verifies:
 - the device belongs to the authenticated user and is not revoked;
 - a participant matches the session, user and device.
 
-Validation failures return HTTP `400`, `401`, `403`, `404` or `410` before the upgrade. After connection, the server sends:
+Validation failures return HTTP `400`, `401`, `403`, `404` or `410` before the upgrade. Every server frame uses this envelope:
 
 ```json
-{ "type": "session.joined", "participantId": "<uuid>", "role": "publisher" }
+{
+  "type": "session.joined",
+  "messageId": "<uuid>",
+  "sessionId": "<uuid>",
+  "from": null,
+  "to": "<participant-uuid>",
+  "timestamp": "2026-07-04T14:00:00Z",
+  "payload": {
+    "participantId": "<participant-uuid>",
+    "role": "publisher"
+  }
+}
 ```
 
 ### Client messages
 
-`ping` requires no recipient and produces `{ "type": "pong" }`. These routed types require a UUID `to` participant and may include any JSON `payload`:
+Clients send the same envelope shape. `type` is required. `messageId` may be supplied as a UUID and is preserved; otherwise the server generates it. Client `sessionId`, `from`, and `timestamp` values are never trusted. The server derives the session from the connection, overwrites `from` with the authenticated participant, and assigns its own timestamp.
+
+`ping` requires no recipient and produces an enveloped `pong`. These routed types require a UUID `to` participant in the same live session and may include any JSON `payload`:
 
 - `publisher.ready`
 - `viewer.ready`
@@ -112,17 +125,22 @@ Validation failures return HTTP `400`, `401`, `403`, `404` or `410` before the u
 - `webrtc.ice_candidate`
 - `pong`
 
-The server ignores client-supplied sender/session metadata and emits a normalized routed frame:
+The server emits a normalized routed frame:
 
 ```json
 {
   "type": "webrtc.offer",
+  "messageId": "<uuid>",
+  "sessionId": "<uuid>",
   "from": "<sender-participant-uuid>",
   "to": "<recipient-participant-uuid>",
+  "timestamp": "2026-07-04T14:00:00Z",
   "payload": {}
 }
 ```
 
-Routing is constrained to the current session. Missing recipients produce an `error` frame with `participant_not_found`. Other error codes are `invalid_message`, `unsupported_message_type` and `invalid_recipient`.
+`session.joined`, `session.left`, `session.ended`, and `error` are server-generated types and are rejected when sent by a client. Routing is constrained to the current session. Errors use the canonical envelope with `type: "error"` and a payload such as `{ "code": "participant_not_found" }`. Other error codes are `invalid_message`, `unsupported_message_type` and `invalid_recipient`.
+
+SDP and ICE payloads are opaque JSON to the API. SDP describes the peer media/session parameters, and ICE candidates describe network paths discovered by the peers. The server forwards those payloads unchanged and never writes their content to logs; routing logs contain only message type, session ID, sender ID, recipient ID, and message ID.
 
 Text messages may be fragmented but may not exceed 64 KiB. Binary frames are rejected. Disconnects broadcast `session.left` to other live participants. When the session becomes terminal, the server sends `session.ended` and closes routing for that connection. There is no persisted signaling history; `SignalingEvent` is mapped in EF Core but the endpoint does not write it.

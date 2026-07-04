@@ -50,10 +50,88 @@ public sealed class SignalingWebSocketTests : IClassFixture<SonicRelayApiFactory
 
         var error = await ReceiveAsync(senderSocket);
         Assert.Equal("error", error.GetProperty("type").GetString());
-        Assert.Equal("participant_not_found", error.GetProperty("code").GetString());
+        Assert.Equal("participant_not_found", error.GetProperty("payload").GetProperty("code").GetString());
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ReceiveAsync(receiverSocket, timeout.Token));
+    }
+
+    [Fact]
+    public async Task Signaling_rejects_an_invalid_session_or_device()
+    {
+        var participant = await CreateParticipantAsync("invalid-admission");
+        var client = _factory.Server.CreateWebSocketClient();
+        client.ConfigureRequest = request => request.Headers.Authorization = $"Bearer {participant.AccessToken}";
+
+        var missingSession = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ConnectAsync(
+            new Uri($"ws://localhost/ws/signaling?sessionId={Guid.NewGuid()}&deviceId={participant.DeviceId}"),
+            CancellationToken.None));
+        Assert.Contains("404", missingSession.Message);
+
+        var missingDevice = await Assert.ThrowsAsync<InvalidOperationException>(() => client.ConnectAsync(
+            new Uri($"ws://localhost/ws/signaling?sessionId={participant.SessionId}&deviceId={Guid.NewGuid()}"),
+            CancellationToken.None));
+        Assert.Contains("403", missingDevice.Message);
+    }
+
+    [Fact]
+    public async Task Signaling_normalizes_the_envelope_and_overwrites_client_metadata()
+    {
+        var participant = await CreateParticipantAsync("normalized");
+        using var socket = await ConnectAsync(participant);
+        var joined = await ReceiveAsync(socket);
+        AssertEnvelope(joined, "session.joined", participant.SessionId);
+
+        var messageId = Guid.NewGuid();
+        await SendAsync(socket, new
+        {
+            type = "webrtc.offer",
+            messageId,
+            sessionId = Guid.NewGuid(),
+            from = Guid.NewGuid(),
+            to = participant.ParticipantId,
+            timestamp = DateTimeOffset.UnixEpoch,
+            payload = new { sdp = "opaque-sdp" }
+        });
+
+        var routed = await ReceiveAsync(socket);
+        AssertEnvelope(routed, "webrtc.offer", participant.SessionId);
+        Assert.Equal(messageId, routed.GetProperty("messageId").GetGuid());
+        Assert.Equal(participant.ParticipantId, routed.GetProperty("from").GetGuid());
+        Assert.Equal(participant.ParticipantId, routed.GetProperty("to").GetGuid());
+        Assert.Equal("opaque-sdp", routed.GetProperty("payload").GetProperty("sdp").GetString());
+        Assert.NotEqual(DateTimeOffset.UnixEpoch, routed.GetProperty("timestamp").GetDateTimeOffset());
+    }
+
+    [Theory]
+    [InlineData("unsupported.type", "unsupported_message_type")]
+    [InlineData("session.ended", "unsupported_message_type")]
+    public async Task Signaling_returns_a_structured_error_for_unsupported_client_types(string type, string code)
+    {
+        var participant = await CreateParticipantAsync($"unsupported-{Guid.NewGuid():N}");
+        using var socket = await ConnectAsync(participant);
+        await ReceiveAsync(socket);
+
+        await SendAsync(socket, new { type });
+
+        var error = await ReceiveAsync(socket);
+        AssertEnvelope(error, "error", participant.SessionId);
+        Assert.Equal(participant.ParticipantId, error.GetProperty("to").GetGuid());
+        Assert.Equal(code, error.GetProperty("payload").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Signaling_returns_a_structured_error_for_invalid_json()
+    {
+        var participant = await CreateParticipantAsync("invalid-json");
+        using var socket = await ConnectAsync(participant);
+        await ReceiveAsync(socket);
+
+        await SendTextAsync(socket, "{not-json");
+
+        var error = await ReceiveAsync(socket);
+        AssertEnvelope(error, "error", participant.SessionId);
+        Assert.Equal("invalid_message", error.GetProperty("payload").GetProperty("code").GetString());
     }
 
     [Theory]
@@ -203,6 +281,23 @@ public sealed class SignalingWebSocketTests : IClassFixture<SonicRelayApiFactory
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(message);
         await socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+    }
+
+    private static async Task SendTextAsync(WebSocket socket, string message)
+    {
+        var bytes = Encoding.UTF8.GetBytes(message);
+        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+    }
+
+    private static void AssertEnvelope(JsonElement message, string type, Guid sessionId)
+    {
+        Assert.Equal(type, message.GetProperty("type").GetString());
+        Assert.NotEqual(Guid.Empty, message.GetProperty("messageId").GetGuid());
+        Assert.Equal(sessionId, message.GetProperty("sessionId").GetGuid());
+        Assert.Equal(JsonValueKind.String, message.GetProperty("timestamp").ValueKind);
+        Assert.True(message.TryGetProperty("from", out _));
+        Assert.True(message.TryGetProperty("to", out _));
+        Assert.True(message.TryGetProperty("payload", out _));
     }
 
     private static async Task<JsonElement> ReceiveAsync(WebSocket socket, CancellationToken ct = default)

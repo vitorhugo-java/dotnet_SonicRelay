@@ -122,12 +122,8 @@ public static class SignalingWebSocketEndpoint
 
         try
         {
-            await SendAsync(SendFrameAsync, new
-            {
-                type = "session.joined",
-                participantId = participant.Id,
-                participant.Role
-            }, context.RequestAborted);
+            await SendEnvelopeAsync(SendFrameAsync, "session.joined", sessionId, null, participant.Id,
+                new { participantId = participant.Id, participant.Role }, context.RequestAborted);
             await ReceiveLoopAsync(socket, SendFrameAsync, sessionId, participant.Id, db, registry, logger,
                 context.RequestAborted);
         }
@@ -138,11 +134,8 @@ public static class SignalingWebSocketEndpoint
             logger.LogInformation(
                 "Disconnected signaling participant {ParticipantId} from session {SessionId} with connection {ConnectionId}",
                 participant.Id, sessionId, connectionId);
-            await BroadcastAsync(registry, sessionId, participant.Id, new
-            {
-                type = "session.left",
-                participantId = participant.Id
-            }, CancellationToken.None);
+            await BroadcastAsync(registry, sessionId, participant.Id, "session.left", participant.Id,
+                new { participantId = participant.Id }, CancellationToken.None);
 
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
@@ -171,7 +164,7 @@ public static class SignalingWebSocketEndpoint
                 var completed = await Task.WhenAny(receiveTask, Task.Delay(TimeSpan.FromSeconds(1), ct));
                 if (completed != receiveTask && await SessionEndedAsync(db, sessionId, ct))
                 {
-                    await SendAsync(sendAsync, new { type = "session.ended" }, ct);
+                    await SendEnvelopeAsync(sendAsync, "session.ended", sessionId, null, participantId, null, ct);
                     await receiveCancellation.CancelAsync();
                     try { await receiveTask; } catch (OperationCanceledException) { }
                     return;
@@ -196,7 +189,7 @@ public static class SignalingWebSocketEndpoint
         }
         catch (JsonException)
         {
-            await SendErrorAsync(sendAsync, "invalid_message", ct);
+            await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_message", ct);
             return true;
         }
 
@@ -205,24 +198,24 @@ public static class SignalingWebSocketEndpoint
             var root = document.RootElement;
             if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
             {
-                await SendErrorAsync(sendAsync, "invalid_message", ct);
+                await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_message", ct);
                 return true;
             }
 
             var type = typeElement.GetString()!;
             if (type == "ping")
             {
-                await SendAsync(sendAsync, new { type = "pong" }, ct);
+                await SendEnvelopeAsync(sendAsync, "pong", sessionId, null, participantId, null, ct);
                 return true;
             }
             if (!RoutedMessageTypes.Contains(type))
             {
-                await SendErrorAsync(sendAsync, "unsupported_message_type", ct);
+                await SendErrorAsync(sendAsync, sessionId, participantId, "unsupported_message_type", ct);
                 return true;
             }
             if (!root.TryGetProperty("to", out var toElement) || !toElement.TryGetGuid(out var toParticipantId))
             {
-                await SendErrorAsync(sendAsync, "invalid_recipient", ct);
+                await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_recipient", ct);
                 return true;
             }
 
@@ -230,30 +223,31 @@ public static class SignalingWebSocketEndpoint
             {
                 logger.LogInformation("Closing signaling for terminal session {SessionId} and participant {ParticipantId}",
                     sessionId, participantId);
-                await SendAsync(sendAsync, new { type = "session.ended" }, ct);
+                await SendEnvelopeAsync(sendAsync, "session.ended", sessionId, null, participantId, null, ct);
                 return false;
             }
 
+            var messageId = root.TryGetProperty("messageId", out var messageIdElement)
+                && messageIdElement.TryGetGuid(out var suppliedMessageId)
+                ? suppliedMessageId
+                : Guid.NewGuid();
+            // SDP and ICE are intentionally opaque here: SDP describes the peer session, while ICE candidates
+            // are network paths discovered by the peers. The signaling server only forwards this JSON.
             var payload = root.TryGetProperty("payload", out var payloadElement)
                 ? payloadElement.Clone()
                 : (JsonElement?)null;
-            var routed = JsonSerializer.SerializeToUtf8Bytes(new
-            {
-                type,
-                from = participantId,
-                to = toParticipantId,
-                payload
-            });
+            // The authenticated socket owns the sender identity, so client-supplied `from` is overwritten.
+            var routed = SerializeEnvelope(type, messageId, sessionId, participantId, toParticipantId, payload);
             var delivered = await registry.SendToParticipantAsync(sessionId, toParticipantId, routed, ct);
             if (!delivered)
             {
-                await SendErrorAsync(sendAsync, "participant_not_found", ct);
+                await SendErrorAsync(sendAsync, sessionId, participantId, "participant_not_found", ct);
                 return true;
             }
 
-            // Deliberately log only routing metadata. SDP and ICE payloads are never logged.
-            logger.LogDebug("Routed signaling message {MessageType} in session {SessionId} from {FromParticipantId} to {ToParticipantId}",
-                type, sessionId, participantId, toParticipantId);
+            // SDP and ICE can expose media and network details, so only envelope metadata is logged.
+            logger.LogDebug("Routed signaling message {MessageType} in session {SessionId} from {FromParticipantId} to {ToParticipantId} with message {MessageId}",
+                type, sessionId, participantId, toParticipantId, messageId);
             return true;
         }
     }
@@ -304,14 +298,15 @@ public static class SignalingWebSocketEndpoint
     }
 
     private static async Task BroadcastAsync(IConnectionRegistry registry, Guid sessionId, Guid excludedParticipantId,
-        object message, CancellationToken ct)
+        string type, Guid? fromParticipantId, object? payload, CancellationToken ct)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(message);
         var connections = await registry.ListBySessionAsync(sessionId, ct);
         foreach (var connection in connections.Where(x => x.ParticipantId != excludedParticipantId))
         {
             try
             {
+                var bytes = SerializeEnvelope(type, Guid.NewGuid(), sessionId, fromParticipantId,
+                    connection.ParticipantId, payload);
                 await registry.SendToParticipantAsync(sessionId, connection.ParticipantId, bytes, ct);
             }
             catch (WebSocketException)
@@ -322,9 +317,23 @@ public static class SignalingWebSocketEndpoint
     }
 
     private static Task SendErrorAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
-        string code, CancellationToken ct) =>
-        SendAsync(sendAsync, new { type = "error", code }, ct);
+        Guid sessionId, Guid participantId, string code, CancellationToken ct) =>
+        SendEnvelopeAsync(sendAsync, "error", sessionId, null, participantId, new { code }, ct);
 
-    private static Task SendAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
-        object message, CancellationToken ct) => sendAsync(JsonSerializer.SerializeToUtf8Bytes(message), ct);
+    private static Task SendEnvelopeAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
+        string type, Guid sessionId, Guid? fromParticipantId, Guid? toParticipantId, object? payload,
+        CancellationToken ct) =>
+        sendAsync(SerializeEnvelope(type, Guid.NewGuid(), sessionId, fromParticipantId, toParticipantId, payload), ct);
+
+    private static byte[] SerializeEnvelope(string type, Guid messageId, Guid sessionId, Guid? fromParticipantId,
+        Guid? toParticipantId, object? payload) => JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            type,
+            messageId,
+            sessionId,
+            from = fromParticipantId,
+            to = toParticipantId,
+            timestamp = DateTimeOffset.UtcNow,
+            payload
+        });
 }
