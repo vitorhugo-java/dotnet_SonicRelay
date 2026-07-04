@@ -1,9 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SonicRelay.Api.Services;
+using SonicRelay.Application.Abstractions;
 using SonicRelay.Domain.Devices;
 using SonicRelay.Domain.Sessions;
 using SonicRelay.Infrastructure.Persistence;
@@ -181,6 +185,52 @@ public sealed class SessionEndpointsTests : IClassFixture<SonicRelayApiFactory>
     }
 
     [Fact]
+    public async Task Cleanup_expires_sessions_and_removes_only_stale_disconnected_participants()
+    {
+        await using var factory = new SonicRelayApiFactory(new Dictionary<string, string?>
+        {
+            ["Sessions:DisconnectedParticipantRetentionHours"] = "24"
+        });
+        var (_, sessionId, code) = await CreateSessionAsync("cleanup", 2, factory);
+        var staleId = Guid.NewGuid();
+        var recentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await using (var seedScope = factory.Services.CreateAsyncScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var session = await db.StreamSessions.SingleAsync(x => x.Id == sessionId);
+            session.CodeExpiresAt = now.AddMinutes(-1);
+            db.SessionParticipants.AddRange(
+                new SessionParticipant
+                {
+                    Id = staleId, SessionId = sessionId, UserId = session.OwnerUserId, DeviceId = session.SourceDeviceId,
+                    Role = ParticipantRoles.Viewer, Status = ParticipantStatuses.Disconnected,
+                    JoinedAt = now.AddDays(-3), LeftAt = now.AddDays(-2)
+                },
+                new SessionParticipant
+                {
+                    Id = recentId, SessionId = sessionId, UserId = session.OwnerUserId, DeviceId = session.SourceDeviceId,
+                    Role = ParticipantRoles.Viewer, Status = ParticipantStatuses.Disconnected,
+                    JoinedAt = now.AddHours(-2), LeftAt = now.AddHours(-1)
+                });
+            await db.SaveChangesAsync();
+        }
+
+        await factory.Services.GetRequiredService<SessionCleanupService>().CleanupOnceAsync(CancellationToken.None);
+
+        await using var assertScope = factory.Services.CreateAsyncScope();
+        var assertDb = assertScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(SessionStatuses.Expired,
+            (await assertDb.StreamSessions.SingleAsync(x => x.Id == sessionId)).Status);
+        Assert.False(await assertDb.SessionParticipants.AnyAsync(x => x.Id == staleId));
+        Assert.True(await assertDb.SessionParticipants.AnyAsync(x => x.Id == recentId));
+        Assert.True(await assertDb.SessionParticipants.AnyAsync(x => x.SessionId == sessionId
+            && x.Status == ParticipantStatuses.Connected));
+        var store = assertScope.ServiceProvider.GetRequiredService<ISessionCodeStore>();
+        Assert.Null(await store.RedeemAsync(HashCode(code), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Owner_can_list_get_and_end_a_session()
     {
         var (owner, sessionId, _) = await CreateSessionAsync("lifecycle-owner", 2);
@@ -253,6 +303,9 @@ public sealed class SessionEndpointsTests : IClassFixture<SonicRelayApiFactory>
         var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
         return document.RootElement.Clone();
     }
+
+    private static string HashCode(string code) => Convert.ToHexString(HMACSHA256.HashData(
+        Encoding.UTF8.GetBytes("integration-test-session-code-key"), Encoding.ASCII.GetBytes(code)));
 
     private sealed record TestUser(HttpClient Client, Guid UserId);
 }

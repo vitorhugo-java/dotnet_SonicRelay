@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using SonicRelay.Api.Endpoints;
+using SonicRelay.Api.Services;
 using SonicRelay.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSonicRelayInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<SessionCleanupService>();
+builder.Services.AddSingleton<IHostedService>(services => services.GetRequiredService<SessionCleanupService>());
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
