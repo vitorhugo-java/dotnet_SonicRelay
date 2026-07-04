@@ -14,6 +14,7 @@ services:
       Auth__AccessTokenMinutes: ${AUTH_ACCESS_TOKEN_MINUTES:-15}
       Auth__RefreshTokenDays: ${AUTH_REFRESH_TOKEN_DAYS:-30}
       Sessions__CodeTtlMinutes: ${SESSION_CODE_TTL_MINUTES:-10}
+      Sessions__CodeHmacKey: ${SESSION_CODE_HMAC_KEY:-change-this-session-code-hmac-key}
       Sessions__MaxViewersPerSession: ${SESSION_MAX_VIEWERS:-3}
     depends_on:
       postgres:
