@@ -1,6 +1,9 @@
+using System.Security.Claims;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using SonicRelay.Api.Endpoints;
 using SonicRelay.Infrastructure;
 
@@ -9,6 +12,30 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSonicRelayInfrastructure(builder.Configuration);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = Math.Ceiling(retryAfter.TotalSeconds).ToString();
+        }
+
+        var policy = context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("SonicRelay.RateLimiting");
+        logger.LogWarning("Rate limit rejected request for policy {PolicyName} on path {RequestPath}",
+            policy, context.HttpContext.Request.Path);
+        return ValueTask.CompletedTask;
+    };
+
+    options.AddPolicy("login", context => IpLimit(context, "RateLimits:Login", 5));
+    options.AddPolicy("refresh", context => IpLimit(context, "RateLimits:Refresh", 5));
+    options.AddPolicy("create-session", context => UserLimit(context, "RateLimits:CreateSession", 10));
+    options.AddPolicy("join-session", context => UserLimit(context, "RateLimits:JoinSession", 10));
+    options.AddPolicy("rotate-code", context => UserLimit(context, "RateLimits:RotateCode", 5));
+});
 builder.Services.Configure<BearerTokenOptions>(IdentityConstants.BearerScheme, options =>
 {
     options.BearerTokenExpiration = TimeSpan.FromMinutes(builder.Configuration.GetValue("Auth:AccessTokenMinutes", 15));
@@ -38,6 +65,7 @@ if (app.Configuration.GetValue("Swagger:Enabled", app.Environment.IsDevelopment(
 
 app.UseWebSockets();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
@@ -48,5 +76,22 @@ app.MapSessionEndpoints();
 app.MapSignalingWebSocketEndpoint();
 
 app.Run();
+
+RateLimitPartition<string> IpLimit(HttpContext context, string section, int defaultPermitLimit) =>
+    CreateLimit(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", section, defaultPermitLimit);
+
+RateLimitPartition<string> UserLimit(HttpContext context, string section, int defaultPermitLimit) =>
+    CreateLimit(context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? context.Connection.RemoteIpAddress?.ToString()
+        ?? "unknown", section, defaultPermitLimit);
+
+RateLimitPartition<string> CreateLimit(string key, string section, int defaultPermitLimit) =>
+    RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+    {
+        PermitLimit = builder.Configuration.GetValue($"{section}:PermitLimit", defaultPermitLimit),
+        Window = TimeSpan.FromSeconds(builder.Configuration.GetValue($"{section}:WindowSeconds", 60)),
+        QueueLimit = 0,
+        AutoReplenishment = true
+    });
 
 public partial class Program;

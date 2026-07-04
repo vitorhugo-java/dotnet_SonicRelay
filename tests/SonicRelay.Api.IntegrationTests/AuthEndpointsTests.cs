@@ -55,6 +55,47 @@ public sealed class AuthEndpointsTests : IClassFixture<SonicRelayApiFactory>
     }
 
     [Fact]
+    public async Task Login_is_rate_limited()
+    {
+        await using var factory = new SonicRelayApiFactory(new Dictionary<string, string?>
+        {
+            ["RateLimits:Login:PermitLimit"] = "1"
+        });
+        var client = factory.CreateClient();
+        var firstEmail = $"limited-login-first-{Guid.NewGuid():N}@example.com";
+        var secondEmail = $"limited-login-second-{Guid.NewGuid():N}@example.com";
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/auth/register", new { email = firstEmail, password = Password })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/auth/register", new { email = secondEmail, password = Password })).StatusCode);
+
+        var accepted = await client.PostAsJsonAsync("/auth/login", new { email = firstEmail, password = Password });
+        var rejected = await client.PostAsJsonAsync("/auth/login", new { email = secondEmail, password = Password });
+
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_is_rate_limited()
+    {
+        await using var factory = new SonicRelayApiFactory(new Dictionary<string, string?>
+        {
+            ["RateLimits:Refresh:PermitLimit"] = "1"
+        });
+        var client = factory.CreateClient();
+        var email = $"limited-refresh-{Guid.NewGuid():N}@example.com";
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/auth/register", new { email, password = Password })).StatusCode);
+        var login = await client.PostAsJsonAsync("/auth/login", new { email, password = Password });
+        var tokens = await ReadJsonAsync(login);
+        var request = new { refreshToken = tokens.GetProperty("refreshToken").GetString() };
+
+        var accepted = await client.PostAsJsonAsync("/auth/refresh", request);
+        var rejected = await client.PostAsJsonAsync("/auth/refresh", request);
+
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
+    }
+
+    [Fact]
     public async Task Me_returns_the_authenticated_user()
     {
         var email = $"me-{Guid.NewGuid():N}@example.com";

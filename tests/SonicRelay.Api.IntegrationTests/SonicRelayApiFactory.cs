@@ -12,6 +12,13 @@ namespace SonicRelay.Api.IntegrationTests;
 public sealed class SonicRelayApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"sonicrelay-tests-{Guid.NewGuid()}";
+    private readonly IReadOnlyDictionary<string, string?> _settings;
+
+    public SonicRelayApiFactory() : this(new Dictionary<string, string?>())
+    {
+    }
+
+    internal SonicRelayApiFactory(IReadOnlyDictionary<string, string?> settings) => _settings = settings;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -20,6 +27,16 @@ public sealed class SonicRelayApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Redis:ConnectionString", "localhost:6379");
         builder.UseSetting("Sessions:CodeTtlMinutes", "10");
         builder.UseSetting("Sessions:CodeHmacKey", "integration-test-session-code-key");
+        builder.UseSetting("Sessions:CleanupEnabled", "false");
+        builder.UseSetting("RateLimits:Login:PermitLimit", "100");
+        builder.UseSetting("RateLimits:Refresh:PermitLimit", "100");
+        builder.UseSetting("RateLimits:CreateSession:PermitLimit", "100");
+        builder.UseSetting("RateLimits:JoinSession:PermitLimit", "100");
+        builder.UseSetting("RateLimits:RotateCode:PermitLimit", "100");
+        foreach (var setting in _settings)
+        {
+            builder.UseSetting(setting.Key, setting.Value);
+        }
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<DbContextOptions<AppDbContext>>();
