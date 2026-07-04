@@ -7,7 +7,8 @@ public sealed record ConnectionDescriptor(
     Guid UserId,
     Guid DeviceId,
     string Role,
-    DateTimeOffset ConnectedAt);
+    DateTimeOffset ConnectedAt,
+    Func<ReadOnlyMemory<byte>, CancellationToken, Task> SendAsync);
 
 public interface IConnectionRegistry
 {
@@ -15,4 +16,5 @@ public interface IConnectionRegistry
     Task UnregisterAsync(string connectionId, CancellationToken ct);
     Task<ConnectionDescriptor?> FindByParticipantAsync(Guid participantId, CancellationToken ct);
     Task<IReadOnlyList<ConnectionDescriptor>> ListBySessionAsync(Guid sessionId, CancellationToken ct);
+    Task<bool> SendToParticipantAsync(Guid sessionId, Guid participantId, ReadOnlyMemory<byte> message, CancellationToken ct);
 }
