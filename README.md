@@ -16,7 +16,7 @@ SonicRelay existe para resolver um problema bem específico: transmitir o áudio
 
 ## Status atual
 
-Este PR inicializa o backend e a infraestrutura base. Algumas rotas ainda são contratos/stubs, porque a realidade infelizmente insiste em exigir implementação depois da arquitetura.
+Este projeto contém o backend e a infraestrutura base. Devices, sessions e signaling ainda têm contratos iniciais; autenticação já usa ASP.NET Core Identity real com persistência PostgreSQL.
 
 | Área | Status | Observação |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ Este PR inicializa o backend e a infraestrutura base. Algumas rotas ainda são c
 | Devices | 🟡 Contrato inicial | Endpoints e domínio base. |
 | Sessions | 🟡 Contrato inicial | Endpoints e modelos base. |
 | WebSocket signaling | 🟡 Skeleton | Endpoint autenticado criado, roteamento real ainda pendente. |
-| Identity/Auth real | 🔴 Pendente | Rotas `/auth` existem, mas a integração completa com Identity/tokens ainda precisa ser implementada. |
+| Identity/Auth real | ✅ Implementado | Identity + EF Core/PostgreSQL, access token opaco, refresh token e endpoints protegidos. |
 | WebRTC media | 🔴 Fora deste repo | A mídia deve ficar nos apps Windows/Flutter, não no backend. |
 | CI/CD VPS | ✅ Base criada | Workflow separado em build, test, publish image e deploy over SSH. |
 
@@ -301,7 +301,7 @@ erDiagram
 | --- | --- |
 | Runtime | .NET 10 |
 | API | ASP.NET Core Minimal API |
-| Auth planejado | ASP.NET Core Identity + token-based auth |
+| Auth | ASP.NET Core Identity + bearer tokens opacos |
 | Persistência | PostgreSQL |
 | Cache/ephemeral store | Redis |
 | ORM | Entity Framework Core + Npgsql |
@@ -317,11 +317,65 @@ erDiagram
 
 | Método | Endpoint | Status | Descrição |
 | --- | --- | --- | --- |
-| `POST` | `/auth/register` | Stub | Cadastro de usuário. |
-| `POST` | `/auth/login` | Stub | Login e emissão de tokens. |
-| `POST` | `/auth/refresh` | Stub | Renovação de access token. |
-| `POST` | `/auth/logout` | Stub protegido | Encerrar sessão/token. |
-| `GET` | `/auth/me` | Stub protegido | Dados do usuário autenticado. |
+| `POST` | `/auth/register` | Público | Cadastra email e senha usando Identity. |
+| `POST` | `/auth/login` | Público | Emite access token e refresh token opacos. |
+| `POST` | `/auth/refresh` | Público | Troca um refresh token válido por um novo par. |
+| `POST` | `/auth/logout` | Protegido | Confirma logout; o client remove seus tokens. |
+| `GET` | `/auth/me` | Protegido | Retorna o perfil do usuário autenticado. |
+
+Os três primeiros endpoints seguem os contratos oficiais de `MapIdentityApi<ApplicationUser>`. O grupo também expõe os endpoints oficiais de confirmação de email, recuperação de senha, 2FA e gerenciamento de conta. Para desktop e mobile, omita `useCookies` ou use `/auth/login?useCookies=false`.
+
+Cadastro:
+
+```http
+POST /auth/register
+Content-Type: application/json
+
+{
+  "email": "listener@example.com",
+  "password": "Valid1!Password"
+}
+```
+
+Login:
+
+```http
+POST /auth/login?useCookies=false
+Content-Type: application/json
+
+{
+  "email": "listener@example.com",
+  "password": "Valid1!Password"
+}
+```
+
+```json
+{
+  "tokenType": "Bearer",
+  "accessToken": "<opaque-access-token>",
+  "expiresIn": 900,
+  "refreshToken": "<opaque-refresh-token>"
+}
+```
+
+Os tokens do Identity são opacos e não são JWTs. Envie o access token nas rotas privadas:
+
+```http
+Authorization: Bearer <opaque-access-token>
+```
+
+Renovação:
+
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "<opaque-refresh-token>"
+}
+```
+
+`POST /auth/logout` retorna `204 No Content`. Como os bearer tokens built-in são autocontidos, o client deve apagar access e refresh token do armazenamento local; esse endpoint não mantém uma blacklist de tokens.
 
 ### Devices
 
@@ -597,6 +651,10 @@ Comandos:
 ```bash
 dotnet restore SonicRelay.sln
 dotnet build SonicRelay.sln
+
+dotnet ef database update \
+  --project src/SonicRelay.Infrastructure/SonicRelay.Infrastructure.csproj \
+  --startup-project services/SonicRelay.Api/SonicRelay.Api.csproj
 
 dotnet run --project services/SonicRelay.Api/SonicRelay.Api.csproj
 ```

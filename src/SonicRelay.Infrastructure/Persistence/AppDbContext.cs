@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SonicRelay.Domain.Devices;
 using SonicRelay.Domain.Sessions;
@@ -6,9 +8,9 @@ using SonicRelay.Domain.Users;
 
 namespace SonicRelay.Infrastructure.Persistence;
 
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
+    : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
-    public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<StreamSession> StreamSessions => Set<StreamSession>();
     public DbSet<SessionParticipant> SessionParticipants => Set<SessionParticipant>();
@@ -16,13 +18,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.Entity<ApplicationUser>(entity =>
         {
             entity.ToTable("application_users");
-            entity.HasKey(x => x.Id);
-            entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
             entity.Property(x => x.DisplayName).HasMaxLength(120).IsRequired();
         });
+
+        modelBuilder.Entity<IdentityRole<Guid>>().ToTable("identity_roles");
+        modelBuilder.Entity<IdentityUserClaim<Guid>>().ToTable("identity_user_claims");
+        modelBuilder.Entity<IdentityUserRole<Guid>>().ToTable("identity_user_roles");
+        modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("identity_user_logins");
+        modelBuilder.Entity<IdentityRoleClaim<Guid>>().ToTable("identity_role_claims");
+        modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("identity_user_tokens");
 
         modelBuilder.Entity<Device>(entity =>
         {
