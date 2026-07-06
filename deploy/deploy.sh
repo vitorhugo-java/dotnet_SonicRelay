@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/opt/sonicrelay}"
+APP_DIR="${APP_DIR:-/docker/sonicRelay}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 IMAGE="${IMAGE:?IMAGE is required}"
 
