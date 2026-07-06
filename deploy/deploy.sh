@@ -27,7 +27,7 @@ docker compose version >/dev/null 2>&1 || {
 
 read_env_value() {
   local key="$1"
-  awk -v key="$key" 'BEGIN { FS="=" } $1 == key { sub(/^[^=]*=/, ""); value=$0 } END { gsub(/\r$/, "", value); gsub(/^\"|\"$/, "", value); print value }' .env
+  awk -v key="$key" 'BEGIN { FS="=" } $1 == key { sub(/^[^=]*=/, ""); value=$0 } END { gsub(/\r$/, "", value); gsub(/^"|"$/, "", value); print value }' .env
 }
 
 run_migrations() {
@@ -53,7 +53,7 @@ run_migrations() {
   docker compose -f "$COMPOSE_FILE" stop api >/dev/null 2>&1 || true
 
   echo "Applying EF Core migrations"
-  "$MIGRATION_BUNDLE" --connection "$postgres_connection" --no-color
+  DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 "$MIGRATION_BUNDLE" --connection "$postgres_connection" --no-color
 }
 
 export IMAGE
