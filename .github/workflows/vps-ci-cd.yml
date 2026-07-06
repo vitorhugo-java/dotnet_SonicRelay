@@ -209,6 +209,14 @@ jobs:
           dotnet tool install --global dotnet-ef --version 10.0.0
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
+      - name: Restore EF bundle projects
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Each GitHub Actions job gets a clean workspace; restore again here so dotnet-ef has project.assets.json for both projects.
+          dotnet restore "$MIGRATIONS_PROJECT" --runtime linux-x64
+          dotnet restore "$APP_PROJECT" --runtime linux-x64
+
       - name: Build EF Core migration bundle
         shell: bash
         run: |
