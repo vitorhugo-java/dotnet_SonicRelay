@@ -21,6 +21,14 @@ services:
     ports: []
     restart: always
 
+  # WARNING: this all-in-one stack publishes the coturn relay through Docker's
+  # bridge/userland proxy. That is fine for STUN and for reaching 3478, but the
+  # UDP relay range below is forwarded by docker-proxy, which rewrites packet
+  # source addresses and drops UDP under load — relay allocations then fail
+  # ("only direct connects") and live connections keep dropping. For a real TURN
+  # relay, run coturn with host networking; see deploy/docker-compose.prodcoturn.yml
+  # (network_mode: host) and use that alongside this stack instead of the coturn
+  # service here.
   coturn:
     profiles: ["prod"]
     ports:
