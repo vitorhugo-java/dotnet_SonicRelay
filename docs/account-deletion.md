@@ -64,8 +64,12 @@ promotes that user.
 Set the webhook URL the API should call when an account is deleted:
 
 ```
-Notifications__AccountDeletionWebhookUrl=https://<n8n-host>/webhook/account-deletion
+Notifications__AccountDeletionWebhookUrl=https://n8n.hugojava.dev/webhook/sonicrelay/account-deletion
 ```
+
+The live workflow is **"SonicRelay – Account deletion email"** (n8n id `ow44HUjgQHOvjsCF`):
+a `POST` webhook at `/webhook/sonicrelay/account-deletion` normalizes the payload and sends
+the notification email over SMTP.
 
 When unset (tests, local dev) the API uses a no-op notifier. The webhook receives a JSON
 `POST`; delivery failures are logged and never block the deletion:
