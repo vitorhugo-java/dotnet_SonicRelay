@@ -20,6 +20,7 @@ This repository contains only the backend and its infrastructure.
 | Sessions | Implemented | Create, list, read, join, rotate code, end and background expiry/cleanup. |
 | WebSocket signaling | Implemented | Authenticated participant validation and in-process, participant-targeted routing. |
 | Devices | Implemented | Authenticated, owner-scoped create, list, read, update, delete and revocation endpoints. |
+| Account deletion | Implemented | Self-service (`DELETE /api/account`) and admin (`DELETE /api/admin/users/{id}`) soft delete with device/session revocation, audit log and n8n webhook. See [account deletion](docs/account-deletion.md). |
 | PostgreSQL | Implemented | Identity, device, session, participant and signaling-event schema plus initial migration. |
 | Redis | Implemented | Expiring HMAC-derived session-code lookup. |
 | WebRTC media | Client responsibility | No media capture, transcoding or relay is implemented in this API. |

@@ -62,6 +62,24 @@ builder.Services.PostConfigure<TurnOptions>(options =>
         options.CredentialTtlSeconds = ttl;
     }
 });
+builder.Services.AddScoped<AccountDeletionService>();
+
+// Notify n8n (or any webhook) when an account is deleted so an operator gets an email.
+// Falls back to a no-op when no webhook is configured (tests, local dev).
+var deletionWebhookUrl = builder.Configuration["Notifications:AccountDeletionWebhookUrl"];
+if (!string.IsNullOrWhiteSpace(deletionWebhookUrl))
+{
+    builder.Services.AddHttpClient("account-deletion-webhook");
+    builder.Services.AddSingleton<IAccountDeletionNotifier>(sp => new WebhookAccountDeletionNotifier(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("account-deletion-webhook"),
+        deletionWebhookUrl,
+        sp.GetRequiredService<ILogger<WebhookAccountDeletionNotifier>>()));
+}
+else
+{
+    builder.Services.AddSingleton<IAccountDeletionNotifier, NullAccountDeletionNotifier>();
+}
+
 builder.Services.AddSingleton<SessionCleanupService>();
 builder.Services.AddSingleton<IHostedService>(services => services.GetRequiredService<SessionCleanupService>());
 builder.Services.AddRateLimiter(options =>
@@ -123,10 +141,14 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready");
 app.MapAuthEndpoints();
+app.MapAccountEndpoints();
+app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapSessionEndpoints();
 app.MapWebRtcEndpoints();
 app.MapSignalingWebSocketEndpoint();
+
+await IdentitySeeder.SeedAsync(app.Services);
 
 app.Run();
 
