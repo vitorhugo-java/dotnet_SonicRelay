@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Prometheus;
 using SonicRelay.Api.Endpoints;
 using SonicRelay.Api.Services;
 using SonicRelay.Infrastructure;
@@ -20,6 +21,7 @@ builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogL
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSonicRelayInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<SonicRelay.Api.Observability.SonicRelayMetrics>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<TurnCredentialService>();
 builder.Services.Configure<TurnOptions>(builder.Configuration.GetSection("Turn"));
@@ -140,6 +142,9 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready");
+// Prometheus scrape endpoint (issue #21). Anonymous so Prometheus can scrape it;
+// exposes only aggregate SonicRelay metrics, no session ids or PII.
+app.MapMetrics();
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminEndpoints();

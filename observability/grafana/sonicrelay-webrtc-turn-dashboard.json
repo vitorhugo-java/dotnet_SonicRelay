@@ -1,0 +1,125 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "title": "SonicRelay - WebRTC/TURN",
+  "uid": "sonicrelay-webrtc-turn",
+  "tags": ["sonicrelay", "webrtc", "turn"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "prometheus", "value": "prometheus" }
+      },
+      {
+        "name": "loki",
+        "type": "datasource",
+        "query": "loki",
+        "current": { "text": "loki", "value": "loki" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Active sessions",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sonicrelay_sessions_active", "refId": "A" }]
+    },
+    {
+      "type": "stat",
+      "title": "Signaling connections",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sonicrelay_signaling_connections_active", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signaling messages/s by type",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sum by (type) (rate(sonicrelay_signaling_messages_total[5m]))", "legendFormat": "{{type}}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signaling errors/s by reason",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sum by (reason) (rate(sonicrelay_signaling_errors_total[5m]))", "legendFormat": "{{reason}}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Transport mode: direct vs relay (selections/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sum by (mode) (rate(sonicrelay_session_transport_mode_total[5m]))", "legendFormat": "{{mode}}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "ICE restarts/s",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "rate(sonicrelay_session_ice_restarts_total[5m])", "legendFormat": "ice restarts", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Packet loss ratio (p50/p95/p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(sonicrelay_session_packet_loss_ratio_bucket[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(sonicrelay_session_packet_loss_ratio_bucket[5m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(sonicrelay_session_packet_loss_ratio_bucket[5m])))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Jitter ms (p50/p95/p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(sonicrelay_session_jitter_ms_bucket[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(sonicrelay_session_jitter_ms_bucket[5m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(sonicrelay_session_jitter_ms_bucket[5m])))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RTT ms (p50/p95/p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(sonicrelay_session_rtt_ms_bucket[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(sonicrelay_session_rtt_ms_bucket[5m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(sonicrelay_session_rtt_ms_bucket[5m])))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container network drops (api + coturn)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        { "expr": "sum by (name) (rate(container_network_receive_packets_dropped_total{name=~\"sonicrelay-api|sonicrelay-coturn|coturn\"}[5m]))", "legendFormat": "rx drop {{name}}", "refId": "A" },
+        { "expr": "sum by (name) (rate(container_network_transmit_packets_dropped_total{name=~\"sonicrelay-api|sonicrelay-coturn|coturn\"}[5m]))", "legendFormat": "tx drop {{name}}", "refId": "B" }
+      ]
+    },
+    {
+      "type": "logs",
+      "title": "Recent logs (api + coturn)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 36 },
+      "datasource": { "type": "loki", "uid": "${loki}" },
+      "targets": [{ "expr": "{container=~\"sonicrelay-api|sonicrelay-coturn|coturn\"}", "refId": "A" }]
+    }
+  ]
+}

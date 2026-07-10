@@ -28,7 +28,8 @@ public static class SignalingWebSocketEndpoint
     }
 
     private static async Task HandleAsync(HttpContext context, UserManager<ApplicationUser> userManager,
-        AppDbContext db, IConnectionRegistry registry, ILoggerFactory loggerFactory)
+        AppDbContext db, IConnectionRegistry registry, ILoggerFactory loggerFactory,
+        Observability.SonicRelayMetrics metrics)
     {
         var logger = loggerFactory.CreateLogger("SonicRelay.Signaling");
         if (!context.WebSockets.IsWebSocketRequest)
@@ -116,6 +117,7 @@ public static class SignalingWebSocketEndpoint
         participant.Status = ParticipantStatuses.Connected;
         participant.LeftAt = null;
         await db.SaveChangesAsync(context.RequestAborted);
+        metrics.ConnectionOpened(sessionId);
         logger.LogInformation(
             "Connected signaling participant {ParticipantId} to session {SessionId} with connection {ConnectionId}",
             participant.Id, sessionId, connectionId);
@@ -126,11 +128,12 @@ public static class SignalingWebSocketEndpoint
                 new { participantId = participant.Id, role = participant.Role }, context.RequestAborted);
             await BroadcastAsync(registry, sessionId, participant.Id, "session.joined", participant.Id,
                 new { participantId = participant.Id, role = participant.Role }, context.RequestAborted);
-            await ReceiveLoopAsync(socket, SendFrameAsync, sessionId, participant.Id, db, registry, logger,
+            await ReceiveLoopAsync(socket, SendFrameAsync, sessionId, participant.Id, db, registry, logger, metrics,
                 context.RequestAborted);
         }
         finally
         {
+            metrics.ConnectionClosed(sessionId);
             await registry.UnregisterAsync(connectionId, CancellationToken.None);
             await MarkDisconnectedAsync(db, participant.Id, connectionId);
             logger.LogInformation(
@@ -155,7 +158,8 @@ public static class SignalingWebSocketEndpoint
 
     private static async Task ReceiveLoopAsync(WebSocket socket,
         Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync, Guid sessionId, Guid participantId,
-        AppDbContext db, IConnectionRegistry registry, ILogger logger, CancellationToken ct)
+        AppDbContext db, IConnectionRegistry registry, ILogger logger, Observability.SonicRelayMetrics metrics,
+        CancellationToken ct)
     {
         while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
         {
@@ -175,14 +179,14 @@ public static class SignalingWebSocketEndpoint
 
             var message = await receiveTask;
             if (message is null) return;
-            if (!await HandleMessageAsync(sendAsync, sessionId, participantId, message, db, registry, logger, ct))
+            if (!await HandleMessageAsync(sendAsync, sessionId, participantId, message, db, registry, logger, metrics, ct))
                 return;
         }
     }
 
     private static async Task<bool> HandleMessageAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
         Guid sessionId, Guid participantId, byte[] message, AppDbContext db, IConnectionRegistry registry, ILogger logger,
-        CancellationToken ct)
+        Observability.SonicRelayMetrics metrics, CancellationToken ct)
     {
         JsonDocument document;
         try
@@ -191,7 +195,7 @@ public static class SignalingWebSocketEndpoint
         }
         catch (JsonException)
         {
-            await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_message", ct);
+            await SendErrorAsync(metrics, sendAsync, sessionId, participantId, "invalid_message", ct);
             return true;
         }
 
@@ -200,24 +204,28 @@ public static class SignalingWebSocketEndpoint
             var root = document.RootElement;
             if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
             {
-                await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_message", ct);
+                await SendErrorAsync(metrics, sendAsync, sessionId, participantId, "invalid_message", ct);
                 return true;
             }
 
             var type = typeElement.GetString()!;
             if (type == "ping")
             {
+                metrics.RecordMessage("ping");
                 await SendEnvelopeAsync(sendAsync, "pong", sessionId, null, participantId, null, ct);
                 return true;
             }
             if (!RoutedMessageTypes.Contains(type))
             {
-                await SendErrorAsync(sendAsync, sessionId, participantId, "unsupported_message_type", ct);
+                await SendErrorAsync(metrics, sendAsync, sessionId, participantId, "unsupported_message_type", ct);
                 return true;
             }
+            // `type` is now guaranteed to be one of the bounded RoutedMessageTypes, so it is
+            // safe to use as a metric label without risking cardinality blow-up.
+            metrics.RecordMessage(type);
             if (!root.TryGetProperty("to", out var toElement) || !toElement.TryGetGuid(out var toParticipantId))
             {
-                await SendErrorAsync(sendAsync, sessionId, participantId, "invalid_recipient", ct);
+                await SendErrorAsync(metrics, sendAsync, sessionId, participantId, "invalid_recipient", ct);
                 return true;
             }
 
@@ -243,7 +251,7 @@ public static class SignalingWebSocketEndpoint
             var delivered = await registry.SendToParticipantAsync(sessionId, toParticipantId, routed, ct);
             if (!delivered)
             {
-                await SendErrorAsync(sendAsync, sessionId, participantId, "participant_not_found", ct);
+                await SendErrorAsync(metrics, sendAsync, sessionId, participantId, "participant_not_found", ct);
                 return true;
             }
 
@@ -318,9 +326,13 @@ public static class SignalingWebSocketEndpoint
         }
     }
 
-    private static Task SendErrorAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
-        Guid sessionId, Guid participantId, string code, CancellationToken ct) =>
-        SendEnvelopeAsync(sendAsync, "error", sessionId, null, participantId, new { code }, ct);
+    private static Task SendErrorAsync(Observability.SonicRelayMetrics metrics,
+        Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
+        Guid sessionId, Guid participantId, string code, CancellationToken ct)
+    {
+        metrics.RecordError(code);
+        return SendEnvelopeAsync(sendAsync, "error", sessionId, null, participantId, new { code }, ct);
+    }
 
     private static Task SendEnvelopeAsync(Func<ReadOnlyMemory<byte>, CancellationToken, Task> sendAsync,
         string type, Guid sessionId, Guid? fromParticipantId, Guid? toParticipantId, object? payload,

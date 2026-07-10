@@ -1,0 +1,11 @@
+# Prometheus scrape snippet for the SonicRelay API (issue #21).
+# Add this job to your existing Prometheus `scrape_configs:`.
+# The API exposes Prometheus metrics anonymously at /metrics.
+- job_name: sonicrelay-api
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+        # Container/service name and the API's listening port.
+        - sonicrelay-api:8080
+      labels:
+        service: sonicrelay-api

@@ -1,0 +1,62 @@
+# SonicRelay WebRTC/TURN alert rules (issue #21).
+# Load into Prometheus via `rule_files:` (or Grafana-managed alerting).
+groups:
+  - name: sonicrelay-webrtc
+    rules:
+      - alert: SonicRelayHighPacketLoss
+        # p95 inbound audio packet-loss ratio above 2% for 5 minutes.
+        expr: histogram_quantile(0.95, sum by (le, role) (rate(sonicrelay_session_packet_loss_ratio_bucket[5m]))) > 0.02
+        for: 5m
+        labels:
+          severity: warning
+          service: sonicrelay
+        annotations:
+          summary: "High WebRTC audio packet loss ({{ $labels.role }})"
+          description: "p95 packet-loss ratio is above 2% for the {{ $labels.role }} role over the last 5m."
+
+      - alert: SonicRelayHighRtt
+        # p95 round-trip time above 300ms for 5 minutes.
+        expr: histogram_quantile(0.95, sum by (le, role) (rate(sonicrelay_session_rtt_ms_bucket[5m]))) > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: sonicrelay
+        annotations:
+          summary: "High WebRTC RTT ({{ $labels.role }})"
+          description: "p95 RTT is above 300ms for the {{ $labels.role }} role over the last 5m."
+
+      - alert: SonicRelayHighJitter
+        # p95 jitter above 30ms for 5 minutes.
+        expr: histogram_quantile(0.95, sum by (le, role) (rate(sonicrelay_session_jitter_ms_bucket[5m]))) > 30
+        for: 5m
+        labels:
+          severity: warning
+          service: sonicrelay
+        annotations:
+          summary: "High WebRTC jitter ({{ $labels.role }})"
+          description: "p95 jitter is above 30ms for the {{ $labels.role }} role over the last 5m."
+
+      - alert: SonicRelaySignalingErrors
+        # Sustained signaling errors indicate clients failing to negotiate.
+        expr: sum(rate(sonicrelay_signaling_errors_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: sonicrelay
+        annotations:
+          summary: "Elevated signaling error rate"
+          description: "Signaling errors are above 0.2/s over the last 5m ({{ $value | printf \"%.2f\" }}/s)."
+
+      - alert: SonicRelayTurnTcpTlsHeavyUse
+        # Frequent TURN TCP/TLS selection suggests UDP is blocked or degraded.
+        expr: |
+          sum(rate(sonicrelay_session_transport_mode_total{mode=~"turn_tcp|turn_tls"}[15m]))
+            /
+          clamp_min(sum(rate(sonicrelay_session_transport_mode_total[15m])), 1e-9) > 0.5
+        for: 10m
+        labels:
+          severity: info
+          service: sonicrelay
+        annotations:
+          summary: "TURN TCP/TLS heavily used"
+          description: "More than 50% of selected transports are TURN TCP/TLS over 15m — UDP may be blocked or degraded."
