@@ -11,6 +11,12 @@ using SonicRelay.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// The signaling receive loop polls session state every second per socket, which
+// floods the console with EF `SELECT Status, CodeExpiresAt` command logs. Keep
+// SQL at Warning+ so app logs (SonicRelay.*, request diagnostics) stay readable.
+// Overridable via Logging:LogLevel configuration if full SQL is ever needed.
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSonicRelayInfrastructure(builder.Configuration);
