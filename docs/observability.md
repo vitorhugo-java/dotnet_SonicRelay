@@ -65,6 +65,17 @@ Signaling connect/disconnect and message-routing events are logged structurally 
 id, participant id, connection id, message type) without SDP/ICE bodies, so Loki can be
 filtered by `container="sonicrelay-api"`.
 
+### Coturn metrics
+
+Coturn exposes its own Prometheus metrics on port 9641 when started with `--prometheus`
+(production: `deploy/docker-compose.prodcoturn.yml`) or `prometheus` in
+`infra/coturn/turnserver.conf` (dev/prod-profile compose stacks). Scrape it with
+[`sonicrelay-coturn`](../observability/prometheus/sonicrelay-scrape.yml) and see the
+"Coturn: ..." panels on the Grafana dashboard for active allocations, relayed traffic, and
+total sessions — correlate these with the "Signaling disconnect reason/s" panel (driven by
+the new `sonicrelay_signaling_disconnect_reason_total` metric) to tell apart a relay-side
+capacity problem from a client/network-side one.
+
 ## Wiring it into your Grafana stack
 
 The existing stack already has `prometheus`, `loki`, `tempo` and `jaeger` datasources.

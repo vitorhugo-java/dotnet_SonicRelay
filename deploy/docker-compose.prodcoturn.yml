@@ -30,6 +30,11 @@
 # TLS: the turns:5349 listener needs a certificate. Mount a fullchain/privkey
 # pair and add `--cert=<path> --pkey=<path>`, otherwise drop the turns: entry
 # from TURN_URIS. Plain turn: on 3478 (udp/tcp) works without a certificate.
+#
+# PROMETHEUS: --prometheus exposes coturn's native metrics on port 9641 (no
+# ports: mapping needed — network_mode: host already makes it reachable).
+# Keep 9641 closed on the host firewall to everything except the Prometheus
+# scrape source; it is not meant to be public.
 services:
   coturn:
     image: coturn/coturn:${COTURN_VERSION:-latest}
@@ -60,3 +65,4 @@ services:
       - --denied-peer-ip=192.168.0.0-192.168.255.255
       - --log-file=stdout
       - --simple-log
+      - --prometheus

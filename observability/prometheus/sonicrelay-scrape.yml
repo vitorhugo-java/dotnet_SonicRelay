@@ -9,3 +9,14 @@
         - sonicrelay-api:8080
       labels:
         service: sonicrelay-api
+
+# Prometheus scrape snippet for coturn's native metrics (connection-loss-logging work).
+# Add this job alongside the sonicrelay-api job above.
+- job_name: sonicrelay-coturn
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+        # Compose service name for local/dev scraping; use the production host:9641 in prod.
+        - coturn:9641
+      labels:
+        service: sonicrelay-coturn

@@ -120,6 +120,40 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 36 },
       "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [{ "expr": "{container=~\"sonicrelay-api|sonicrelay-coturn|coturn\"}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Coturn: active allocations",
+      "description": "Metric name (turn_total_allocations) verified against coturn's public documentation/maintainer guidance, not against a live instance (no Docker daemon in the dev sandbox that produced this) — confirm against real /metrics output before relying on this in production.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "turn_total_allocations", "legendFormat": "allocations", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Coturn: relayed traffic (bytes/s)",
+      "description": "Metric names (turn_total_traffic_rcvb, turn_total_traffic_sentb) verified against coturn's public documentation, not against a live instance (no Docker daemon in the dev sandbox that produced this) — confirm against real /metrics output before relying on this in production.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        { "expr": "rate(turn_total_traffic_rcvb[5m])", "legendFormat": "rx", "refId": "A" },
+        { "expr": "rate(turn_total_traffic_sentb[5m])", "legendFormat": "tx", "refId": "B" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Coturn: total sessions",
+      "description": "Coturn does not expose a distinct 'sessions' metric family separate from allocations; this reuses turn_total_allocations (the TURN-allocation gauge) as the closest available proxy for active session count, per coturn maintainer guidance (github.com/coturn/coturn/discussions/1091). Verified against public documentation/discussion, not against a live instance (no Docker daemon in the dev sandbox that produced this) — confirm against real /metrics output before relying on this in production.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 46 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "turn_total_allocations", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Signaling disconnect reason/s",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 54 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [{ "expr": "sum by (reason) (rate(sonicrelay_signaling_disconnect_reason_total[5m]))", "legendFormat": "{{reason}}", "refId": "A" }]
     }
   ]
 }
