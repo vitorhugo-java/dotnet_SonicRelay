@@ -112,7 +112,7 @@ public static class SessionEndpoints
 
     private static async Task<IResult> EndAsync(Guid sessionId, System.Security.Claims.ClaimsPrincipal principal,
         UserManager<ApplicationUser> userManager, AppDbContext db, ISessionCodeStore codeStore,
-        ILoggerFactory loggerFactory, CancellationToken ct)
+        IParticipantReconnectTracker reconnectTracker, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var user = await userManager.GetUserAsync(principal);
         if (user is null) return Results.Unauthorized();
@@ -123,12 +123,18 @@ public static class SessionEndpoints
             var now = DateTimeOffset.UtcNow;
             session.Status = SessionStatuses.Ended;
             session.EndedAt = now;
+            // Includes participants mid-reconnect-grace-period: an owner-initiated end must win
+            // immediately over a pending grace timer, which we also cancel so it can't fire a
+            // stale "session.left" broadcast afterwards.
             var connected = await db.SessionParticipants.Where(x => x.SessionId == sessionId
-                && x.Status == ParticipantStatuses.Connected).ToListAsync(ct);
+                && (x.Status == ParticipantStatuses.Connected || x.Status == ParticipantStatuses.Reconnecting))
+                .ToListAsync(ct);
             foreach (var participant in connected)
             {
                 participant.Status = ParticipantStatuses.Disconnected;
+                participant.ConnectionId = null;
                 participant.LeftAt = now;
+                reconnectTracker.TryCancelGracePeriod(participant.Id);
             }
             await db.SaveChangesAsync(ct);
             await codeStore.RemoveAsync(sessionId, ct);
@@ -205,8 +211,12 @@ public static class SessionEndpoints
             return Results.Ok(ToResponse(session));
         }
 
+        // Viewers mid-reconnect-grace-period still hold their slot, otherwise a new viewer
+        // could take it during the grace window and leave a maxViewers=1 session with two
+        // viewers once the original one's WebSocket reconnects.
         var viewerCount = await db.SessionParticipants.CountAsync(x => x.SessionId == session.Id
-            && x.Role == ParticipantRoles.Viewer && x.Status == ParticipantStatuses.Connected, ct);
+            && x.Role == ParticipantRoles.Viewer
+            && (x.Status == ParticipantStatuses.Connected || x.Status == ParticipantStatuses.Reconnecting), ct);
         if (viewerCount >= session.MaxViewers) return Results.Conflict(new { error = "Session viewer limit reached." });
 
         var participant = new SessionParticipant
