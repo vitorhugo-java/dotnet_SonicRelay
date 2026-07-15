@@ -89,6 +89,19 @@ public sealed class WebRtcObservabilityTests : IClassFixture<SonicRelayApiFactor
         Assert.Contains("sonicrelay_session_rtt_ms", metrics);
     }
 
+    [Fact]
+    public async Task Metrics_endpoint_exposes_the_disconnect_reason_series_after_recording_one()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var metrics = scope.ServiceProvider.GetRequiredService<SonicRelay.Api.Observability.SonicRelayMetrics>();
+
+        metrics.RecordDisconnectReason("transport_error");
+
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync("/metrics");
+        Assert.Contains("sonicrelay_signaling_disconnect_reason_total{reason=\"transport_error\"}", body);
+    }
+
     private static void Authorize(HttpClient client, string token) =>
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 

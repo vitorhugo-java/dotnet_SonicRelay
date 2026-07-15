@@ -25,6 +25,11 @@ public sealed class SonicRelayMetrics
         "Signaling errors returned to clients, by reason.",
         new CounterConfiguration { LabelNames = ["reason"] });
 
+    private readonly Counter _disconnectReasons = Metrics.CreateCounter(
+        "sonicrelay_signaling_disconnect_reason_total",
+        "Signaling WebSocket disconnects, by classified reason.",
+        new CounterConfiguration { LabelNames = ["reason"] });
+
     private readonly Counter _iceRestarts = Metrics.CreateCounter(
         "sonicrelay_session_ice_restarts_total",
         "ICE restarts reported by clients.");
@@ -72,6 +77,8 @@ public sealed class SonicRelayMetrics
     public void RecordMessage(string type) => _signalingMessages.WithLabels(Bounded(type)).Inc();
 
     public void RecordError(string reason) => _signalingErrors.WithLabels(Bounded(reason)).Inc();
+
+    public void RecordDisconnectReason(string reason) => _disconnectReasons.WithLabels(Bounded(reason)).Inc();
 
     /// <summary>Marks a signaling connection opened for a session.</summary>
     public void ConnectionOpened(Guid sessionId)
