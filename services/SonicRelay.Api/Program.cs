@@ -145,8 +145,8 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("rotate-code", context => UserLimit(context, "RateLimits:RotateCode", 5));
     options.AddPolicy("device-bootstrap", context => IpLimit(context, "RateLimits:DeviceBootstrap", 10));
     options.AddPolicy("device-token", context => IpLimit(context, "RateLimits:DeviceToken", 10));
-    options.AddPolicy("pairing-create", context => UserLimit(context, "RateLimits:PairingCreate", 10));
-    options.AddPolicy("pairing-complete", context => UserLimit(context, "RateLimits:PairingComplete", 10));
+    options.AddPolicy("pairing-create", context => DeviceLimit(context, "RateLimits:PairingCreate", 10));
+    options.AddPolicy("pairing-complete", context => DeviceLimit(context, "RateLimits:PairingComplete", 10));
 });
 builder.Services.Configure<BearerTokenOptions>(IdentityConstants.BearerScheme, options =>
 {
@@ -220,6 +220,11 @@ RateLimitPartition<string> IpLimit(HttpContext context, string section, int defa
 
 RateLimitPartition<string> UserLimit(HttpContext context, string section, int defaultPermitLimit) =>
     CreateLimit(context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? context.Connection.RemoteIpAddress?.ToString()
+        ?? "unknown", section, defaultPermitLimit);
+
+RateLimitPartition<string> DeviceLimit(HttpContext context, string section, int defaultPermitLimit) =>
+    CreateLimit(context.User.FindFirstValue("sub")
         ?? context.Connection.RemoteIpAddress?.ToString()
         ?? "unknown", section, defaultPermitLimit);
 

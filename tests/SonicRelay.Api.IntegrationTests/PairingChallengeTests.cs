@@ -68,6 +68,45 @@ public sealed class PairingChallengeTests : IClassFixture<SonicRelayApiFactory>
 
         Assert.Equal(HttpStatusCode.BadRequest, wrongCode.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, unknownChallenge.StatusCode);
+
+        var wrongCodeBody = await wrongCode.Content.ReadAsStringAsync();
+        var unknownChallengeBody = await unknownChallenge.Content.ReadAsStringAsync();
+
+        // The two failure modes (wrong code vs. unknown/expired challenge id) must be
+        // indistinguishable to the caller: identical status code AND identical body.
+        // If the bodies ever diverged, that divergence itself would leak which case applied.
+        Assert.Equal("{\"error\":\"Invalid or expired pairing code.\"}", wrongCodeBody);
+        Assert.Equal(wrongCodeBody, unknownChallengeBody);
+    }
+
+    [Fact]
+    public async Task Complete_Rejects_AlreadyConsumed_Challenge_With_Same_Generic_Error()
+    {
+        var publisherToken = await BootstrapAndAuthenticateAsync("windows_publisher", "windows");
+        var firstViewerToken = await BootstrapAndAuthenticateAsync("flutter_viewer", "android");
+        var secondViewerToken = await BootstrapAndAuthenticateAsync("flutter_viewer", "android");
+
+        var challengeResponse = await _client.SendAsync(
+            Authorized(HttpMethod.Post, "/api/pairings/challenges", publisherToken));
+        var challenge = await challengeResponse.Content.ReadFromJsonAsync<CreateChallengeResponse>();
+
+        // Consume the challenge once, successfully, with a fresh viewer device.
+        var firstComplete = await _client.SendAsync(Authorized(HttpMethod.Post, "/api/pairings/complete",
+            firstViewerToken, new CompletePairingRequest(challenge!.ChallengeId, challenge.Code)));
+        Assert.Equal(HttpStatusCode.OK, firstComplete.StatusCode);
+
+        // A different, freshly-bootstrapped viewer device attempts to reuse the same
+        // (now-consumed) challenge id/code pair.
+        var reuseAttempt = await _client.SendAsync(Authorized(HttpMethod.Post, "/api/pairings/complete",
+            secondViewerToken, new CompletePairingRequest(challenge.ChallengeId, challenge.Code)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, reuseAttempt.StatusCode);
+        var reuseAttemptBody = await reuseAttempt.Content.ReadAsStringAsync();
+        Assert.Equal("{\"error\":\"Invalid or expired pairing code.\"}", reuseAttemptBody);
+
+        // Note: this deliberately does not cover the expiry branch of IsUsable — doing so
+        // would require faking TimeProvider, which SonicRelayApiFactory doesn't currently
+        // wire up for this feature. That remains a known, documented gap.
     }
 
     [Fact]
