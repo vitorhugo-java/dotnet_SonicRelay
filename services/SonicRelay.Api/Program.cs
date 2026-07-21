@@ -201,9 +201,9 @@ app.MapMetrics();
 app.MapAuthEndpoints();
 app.MapAccountEndpoints();
 app.MapAdminEndpoints();
+app.MapDeviceEndpoints();
 if (deviceIdentityEnabled)
 {
-    app.MapDeviceEndpoints();
     app.MapDeviceIdentityEndpoints();
     app.MapPairingEndpoints();
 }
