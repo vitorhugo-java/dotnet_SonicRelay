@@ -37,6 +37,15 @@ later phase of issue #26.
    are restricted to a caller whose authenticated device ID participates in
    the pairing.
 
+`pairing-create` and `pairing-complete` are rate-limited by caller IP address
+(the same keying as `login`/`refresh`), not by device ID. Per-device keying
+was evaluated but is not currently achievable without making `DeviceBearer`
+the app's default authentication scheme, which is out of scope for this
+phase (`UseRateLimiter()` runs before the `DeviceBearer` principal is
+populated by `UseAuthorization()`'s explicit `AddAuthenticationSchemes` call).
+`DeviceIdentity:PairingMaxAttempts` is the primary defense against pairing-code
+brute-forcing regardless of rate-limit keying granularity.
+
 ## Configuration
 
 | Key | Purpose |

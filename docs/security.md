@@ -41,14 +41,19 @@ Current limitation: successful join lookup does not consume a code. A code can b
   every scoped request re-checks device status and credential version against
   the database, so rotation and revocation take effect immediately.
 - Pairing codes follow the session-code convention: HMAC-hashed, short TTL,
-  attempt-limited, and indistinguishable failure responses.
+  attempt-limited, and indistinguishable failure responses. `pairing-create`
+  and `pairing-complete` are rate-limited by IP, not by device: per-device
+  keying was evaluated but would require making `DeviceBearer` the app's
+  default authentication scheme, which is out of scope for this phase, so
+  `DeviceIdentity:PairingMaxAttempts` remains the primary defense against
+  pairing-code brute-forcing.
 - The entire flow is gated by `DeviceIdentity:Enabled` and does not affect
   the existing Identity login endpoints.
 
 ### Abuse and data exposure
 
-- Fixed-window limits return `429`: login and refresh are keyed by IP; create, join and rotate are keyed by user ID (falling back to IP).
-- Defaults per 60-second window are login `5`, refresh `5`, create `10`, join `10`, rotate `5`.
+- Fixed-window limits return `429`: login, refresh, device-bootstrap, device-token, pairing-create and pairing-complete are keyed by IP; create, join and rotate are keyed by user ID (falling back to IP).
+- Defaults per 60-second window are login `5`, refresh `5`, create `10`, join `10`, rotate `5`, device-bootstrap `10`, device-token `10`, pairing-create `10`, pairing-complete `10`.
 - Signaling frames are limited to 64 KiB text messages.
 - Signaling logs record routing metadata only; SDP and ICE payloads are not logged by the endpoint.
 - Readiness checks include PostgreSQL and Redis; liveness does not expose dependency state.
