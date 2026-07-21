@@ -23,6 +23,14 @@ public static class PairingEndpoints
             .RequireRateLimiting("pairing-complete")
             .WithTags("Pairing");
 
+        app.MapGet("/api/devices/{deviceId:guid}/pairings", ListAsync)
+            .RequireAuthorization("device:read")
+            .WithTags("Pairing");
+
+        app.MapDelete("/api/pairings/{pairingId:guid}", RevokeAsync)
+            .RequireAuthorization("pairing:revoke")
+            .WithTags("Pairing");
+
         return app;
     }
 
@@ -85,6 +93,39 @@ public static class PairingEndpoints
         db.DevicePairings.Add(pairing);
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToResponse(pairing));
+    }
+
+    private static async Task<IResult> ListAsync(Guid deviceId, ClaimsPrincipal principal,
+        AppDbContext db, CancellationToken ct)
+    {
+        var caller = await DeviceIdentityEndpoints.RequireDeviceAsync(principal, db, ct);
+        if (caller is null || caller.Id != deviceId) return Results.Unauthorized();
+
+        var pairings = await db.DevicePairings.AsNoTracking()
+            .Where(x => (x.PublisherDeviceId == deviceId || x.ViewerDeviceId == deviceId)
+                && x.Status == DevicePairingStatuses.Active)
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(ct);
+        return Results.Ok(pairings.Select(ToResponse));
+    }
+
+    private static async Task<IResult> RevokeAsync(Guid pairingId, ClaimsPrincipal principal,
+        AppDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var caller = await DeviceIdentityEndpoints.RequireDeviceAsync(principal, db, ct);
+        if (caller is null) return Results.Unauthorized();
+
+        var pairing = await db.DevicePairings.SingleOrDefaultAsync(x =>
+            x.Id == pairingId && (x.PublisherDeviceId == caller.Id || x.ViewerDeviceId == caller.Id), ct);
+        if (pairing is null) return Results.NotFound();
+
+        if (pairing.Status != DevicePairingStatuses.Revoked)
+        {
+            pairing.Status = DevicePairingStatuses.Revoked;
+            pairing.RevokedAt = time.GetUtcNow();
+            await db.SaveChangesAsync(ct);
+        }
+        return Results.NoContent();
     }
 
     private static bool IsUsable(PairingChallenge? challenge, DateTimeOffset now) =>
