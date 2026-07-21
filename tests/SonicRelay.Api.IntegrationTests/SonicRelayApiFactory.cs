@@ -38,6 +38,8 @@ public sealed class SonicRelayApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("DeviceIdentity:TokenSigningKey", "integration-test-device-token-signing-key-32bytes-min");
         builder.UseSetting("RateLimits:DeviceBootstrap:PermitLimit", "100");
         builder.UseSetting("RateLimits:DeviceToken:PermitLimit", "100");
+        builder.UseSetting("RateLimits:PairingCreate:PermitLimit", "100");
+        builder.UseSetting("RateLimits:PairingComplete:PermitLimit", "100");
         foreach (var setting in _settings)
         {
             builder.UseSetting(setting.Key, setting.Value);

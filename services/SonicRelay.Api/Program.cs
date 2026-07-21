@@ -75,6 +75,7 @@ builder.Services.AddScoped<AccountDeletionService>();
 
 builder.Services.Configure<DeviceIdentityOptions>(builder.Configuration.GetSection("DeviceIdentity"));
 builder.Services.AddSingleton<DeviceCredentialService>();
+builder.Services.AddSingleton<PairingChallengeService>();
 builder.Services.AddScoped<IAuthorizationHandler, DeviceScopeAuthorizationHandler>();
 if (deviceIdentityEnabled)
 {
@@ -144,6 +145,8 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("rotate-code", context => UserLimit(context, "RateLimits:RotateCode", 5));
     options.AddPolicy("device-bootstrap", context => IpLimit(context, "RateLimits:DeviceBootstrap", 10));
     options.AddPolicy("device-token", context => IpLimit(context, "RateLimits:DeviceToken", 10));
+    options.AddPolicy("pairing-create", context => UserLimit(context, "RateLimits:PairingCreate", 10));
+    options.AddPolicy("pairing-complete", context => UserLimit(context, "RateLimits:PairingComplete", 10));
 });
 builder.Services.Configure<BearerTokenOptions>(IdentityConstants.BearerScheme, options =>
 {
@@ -202,6 +205,7 @@ app.MapDeviceEndpoints();
 if (deviceIdentityEnabled)
 {
     app.MapDeviceIdentityEndpoints();
+    app.MapPairingEndpoints();
 }
 app.MapSessionEndpoints();
 app.MapWebRtcEndpoints();
