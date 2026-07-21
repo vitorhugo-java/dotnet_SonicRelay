@@ -3,12 +3,14 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 using Prometheus;
+using SonicRelay.Api.Authorization;
 using SonicRelay.Api.Endpoints;
 using SonicRelay.Api.Services;
 using SonicRelay.Infrastructure;
@@ -73,10 +75,15 @@ builder.Services.AddScoped<AccountDeletionService>();
 
 builder.Services.Configure<DeviceIdentityOptions>(builder.Configuration.GetSection("DeviceIdentity"));
 builder.Services.AddSingleton<DeviceCredentialService>();
+builder.Services.AddScoped<IAuthorizationHandler, DeviceScopeAuthorizationHandler>();
 if (deviceIdentityEnabled)
 {
     builder.Services.AddAuthentication().AddJwtBearer("DeviceBearer", jwtOptions =>
     {
+        // Keep claim types as issued (e.g. "sub", not ClaimTypes.NameIdentifier) so
+        // downstream code reading JwtRegisteredClaimNames.Sub/"cv"/"scope" matches
+        // what DeviceCredentialService.IssueAccessToken actually put in the token.
+        jwtOptions.MapInboundClaims = false;
         var deviceOptions = builder.Configuration.GetSection("DeviceIdentity").Get<DeviceIdentityOptions>()
             ?? new DeviceIdentityOptions();
         jwtOptions.TokenValidationParameters = new TokenValidationParameters
@@ -155,6 +162,19 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("CanPublishSession", policy => policy.RequireAuthenticatedUser());
     options.AddPolicy("CanViewSession", policy => policy.RequireAuthenticatedUser());
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+
+    if (deviceIdentityEnabled)
+    {
+        foreach (var scope in new[] { "device:read", "device:manage", "pairing:create", "pairing:complete", "pairing:revoke" })
+        {
+            options.AddPolicy(scope, policy =>
+            {
+                policy.AddAuthenticationSchemes("DeviceBearer");
+                policy.RequireAuthenticatedUser();
+                policy.Requirements.Add(new DeviceScopeRequirement(scope));
+            });
+        }
+    }
 });
 
 var app = builder.Build();

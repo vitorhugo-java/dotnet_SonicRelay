@@ -17,6 +17,8 @@ public static class DeviceIdentityEndpoints
         var group = app.MapGroup("/api/devices").WithTags("DeviceIdentity");
         group.MapPost("/bootstrap", BootstrapAsync).RequireRateLimiting("device-bootstrap");
         group.MapPost("/token", TokenAsync).RequireRateLimiting("device-token");
+        group.MapPost("/rotate-credential", RotateAsync).RequireAuthorization("device:manage");
+        group.MapPost("/revoke", RevokeAsync).RequireAuthorization("device:manage");
         return app;
     }
 
@@ -58,6 +60,35 @@ public static class DeviceIdentityEndpoints
         await db.SaveChangesAsync(ct);
         var (token, expiresAt) = credentials.IssueAccessToken(device);
         return Results.Ok(new DeviceTokenResponse(token, expiresAt, DeviceCredentialService.ScopesFor(device.DeviceType)));
+    }
+
+    private static async Task<IResult> RotateAsync(RotateCredentialRequest request, ClaimsPrincipal principal,
+        DeviceCredentialService credentials, AppDbContext db, CancellationToken ct)
+    {
+        var device = await RequireDeviceAsync(principal, db, ct);
+        if (device is null) return Results.Unauthorized();
+        if (!credentials.VerifySecret(request.CurrentCredentialSecret ?? string.Empty, device.CredentialSecretHash))
+            return Results.Unauthorized();
+
+        var (plaintext, hash) = credentials.GenerateCredential();
+        device.CredentialSecretHash = hash;
+        device.CredentialVersion += 1;
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new RotateCredentialResponse(plaintext, device.CredentialVersion));
+    }
+
+    private static async Task<IResult> RevokeAsync(ClaimsPrincipal principal,
+        AppDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var device = await RequireDeviceAsync(principal, db, ct);
+        if (device is null) return Results.Unauthorized();
+        if (device.Status != DeviceIdentityStatuses.Revoked)
+        {
+            device.Status = DeviceIdentityStatuses.Revoked;
+            device.RevokedAt = time.GetUtcNow();
+            await db.SaveChangesAsync(ct);
+        }
+        return Results.NoContent();
     }
 
     internal static async Task<DeviceIdentity?> RequireDeviceAsync(

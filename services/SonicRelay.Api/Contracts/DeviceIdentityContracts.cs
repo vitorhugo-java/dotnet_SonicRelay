@@ -7,3 +7,7 @@ public sealed record BootstrapDeviceResponse(Guid DeviceId, string CredentialSec
 public sealed record DeviceTokenRequest(Guid DeviceId, string CredentialSecret);
 
 public sealed record DeviceTokenResponse(string AccessToken, DateTimeOffset ExpiresAt, IReadOnlyList<string> Scopes);
+
+public sealed record RotateCredentialRequest(string CurrentCredentialSecret);
+
+public sealed record RotateCredentialResponse(string CredentialSecret, int CredentialVersion);
