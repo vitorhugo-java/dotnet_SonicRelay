@@ -58,8 +58,16 @@ public sealed class DeviceCredentialService(IOptions<DeviceIdentityOptions> opti
 
     public static IReadOnlyList<string> ScopesFor(string deviceType) => deviceType switch
     {
-        DeviceTypes.WindowsPublisher => ["device:read", "device:manage", "pairing:create", "pairing:revoke"],
-        DeviceTypes.FlutterViewer => ["device:read", "device:manage", "pairing:complete", "pairing:revoke"],
+        DeviceTypes.WindowsPublisher =>
+        [
+            "device:read", "device:manage", "pairing:create", "pairing:revoke",
+            "session:create", "session:end", "signaling:connect", "turn:credentials"
+        ],
+        DeviceTypes.FlutterViewer =>
+        [
+            "device:read", "device:manage", "pairing:complete", "pairing:revoke",
+            "session:join", "signaling:connect", "turn:credentials"
+        ],
         _ => []
     };
 

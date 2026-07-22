@@ -77,30 +77,28 @@ builder.Services.Configure<DeviceIdentityOptions>(builder.Configuration.GetSecti
 builder.Services.AddSingleton<DeviceCredentialService>();
 builder.Services.AddSingleton<PairingChallengeService>();
 builder.Services.AddScoped<IAuthorizationHandler, DeviceScopeAuthorizationHandler>();
-if (deviceIdentityEnabled)
+
+builder.Services.AddAuthentication().AddJwtBearer("DeviceBearer", jwtOptions =>
 {
-    builder.Services.AddAuthentication().AddJwtBearer("DeviceBearer", jwtOptions =>
+    // Keep claim types as issued (e.g. "sub", not ClaimTypes.NameIdentifier) so
+    // downstream code reading JwtRegisteredClaimNames.Sub/"cv"/"scope" matches
+    // what DeviceCredentialService.IssueAccessToken actually put in the token.
+    jwtOptions.MapInboundClaims = false;
+    var deviceOptions = builder.Configuration.GetSection("DeviceIdentity").Get<DeviceIdentityOptions>()
+        ?? new DeviceIdentityOptions();
+    jwtOptions.TokenValidationParameters = new TokenValidationParameters
     {
-        // Keep claim types as issued (e.g. "sub", not ClaimTypes.NameIdentifier) so
-        // downstream code reading JwtRegisteredClaimNames.Sub/"cv"/"scope" matches
-        // what DeviceCredentialService.IssueAccessToken actually put in the token.
-        jwtOptions.MapInboundClaims = false;
-        var deviceOptions = builder.Configuration.GetSection("DeviceIdentity").Get<DeviceIdentityOptions>()
-            ?? new DeviceIdentityOptions();
-        jwtOptions.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidIssuer = deviceOptions.Issuer,
-            ValidAudience = deviceOptions.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(deviceOptions.TokenSigningKey ?? string.Empty)),
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ClockSkew = TimeSpan.FromSeconds(30)
-        };
-    });
-}
+        ValidIssuer = deviceOptions.Issuer,
+        ValidAudience = deviceOptions.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(deviceOptions.TokenSigningKey ?? string.Empty)),
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ClockSkew = TimeSpan.FromSeconds(30)
+    };
+});
 
 // Notify n8n (or any webhook) when an account is deleted so an operator gets an email.
 // Falls back to a no-op when no webhook is configured (tests, local dev).
@@ -140,9 +138,9 @@ builder.Services.AddRateLimiter(options =>
 
     options.AddPolicy("login", context => IpLimit(context, "RateLimits:Login", 5));
     options.AddPolicy("refresh", context => IpLimit(context, "RateLimits:Refresh", 5));
-    options.AddPolicy("create-session", context => UserLimit(context, "RateLimits:CreateSession", 10));
-    options.AddPolicy("join-session", context => UserLimit(context, "RateLimits:JoinSession", 10));
-    options.AddPolicy("rotate-code", context => UserLimit(context, "RateLimits:RotateCode", 5));
+    options.AddPolicy("create-session", context => IpLimit(context, "RateLimits:CreateSession", 10));
+    options.AddPolicy("join-session", context => IpLimit(context, "RateLimits:JoinSession", 10));
+    options.AddPolicy("rotate-code", context => IpLimit(context, "RateLimits:RotateCode", 5));
     options.AddPolicy("device-bootstrap", context => IpLimit(context, "RateLimits:DeviceBootstrap", 10));
     options.AddPolicy("device-token", context => IpLimit(context, "RateLimits:DeviceToken", 10));
     options.AddPolicy("pairing-create", context => IpLimit(context, "RateLimits:PairingCreate", 10));
@@ -160,11 +158,25 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AuthenticatedUser", policy => policy.RequireAuthenticatedUser());
     options.AddPolicy("CanRegisterDevice", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("CanCreateSession", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("CanJoinSession", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("CanPublishSession", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("CanViewSession", policy => policy.RequireAuthenticatedUser());
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+
+    options.AddPolicy("DeviceAuthenticated", policy =>
+    {
+        policy.AddAuthenticationSchemes("DeviceBearer");
+        policy.RequireAuthenticatedUser();
+        policy.Requirements.Add(new DeviceScopeRequirement());
+    });
+
+    foreach (var scope in new[]
+        { "session:create", "session:join", "session:end", "signaling:connect", "turn:credentials" })
+    {
+        options.AddPolicy(scope, policy =>
+        {
+            policy.AddAuthenticationSchemes("DeviceBearer");
+            policy.RequireAuthenticatedUser();
+            policy.Requirements.Add(new DeviceScopeRequirement(scope));
+        });
+    }
 
     if (deviceIdentityEnabled)
     {

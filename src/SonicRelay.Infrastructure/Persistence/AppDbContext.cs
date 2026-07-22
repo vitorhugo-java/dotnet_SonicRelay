@@ -53,7 +53,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
             entity.ToTable("stream_sessions");
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Status).HasMaxLength(32).IsRequired();
-            entity.HasIndex(x => new { x.OwnerUserId, x.Status }).HasDatabaseName("ix_stream_sessions_owner_status");
             entity.HasIndex(x => new { x.SourceDeviceId, x.Status }).HasDatabaseName("ix_stream_sessions_source_device_status");
         });
 

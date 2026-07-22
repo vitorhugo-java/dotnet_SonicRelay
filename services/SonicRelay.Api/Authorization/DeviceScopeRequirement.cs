@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace SonicRelay.Api.Authorization;
 
-public sealed class DeviceScopeRequirement(string scope) : IAuthorizationRequirement
+public sealed class DeviceScopeRequirement(string? scope = null) : IAuthorizationRequirement
 {
-    public string Scope { get; } = scope;
+    public string? Scope { get; } = scope;
 }
