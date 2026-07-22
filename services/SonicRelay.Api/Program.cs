@@ -230,11 +230,6 @@ app.Run();
 RateLimitPartition<string> IpLimit(HttpContext context, string section, int defaultPermitLimit) =>
     CreateLimit(context.Connection.RemoteIpAddress?.ToString() ?? "unknown", section, defaultPermitLimit);
 
-RateLimitPartition<string> UserLimit(HttpContext context, string section, int defaultPermitLimit) =>
-    CreateLimit(context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-        ?? context.Connection.RemoteIpAddress?.ToString()
-        ?? "unknown", section, defaultPermitLimit);
-
 RateLimitPartition<string> CreateLimit(string key, string section, int defaultPermitLimit) =>
     RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
     {
