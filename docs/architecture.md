@@ -76,7 +76,7 @@ sequenceDiagram
     API->>DB: create session + publisher participant
     API->>R: store HMAC-derived code lookup with TTL
     API-->>W: session + temporary code
-    W->>API: GET /ws/signaling?sessionId=...&deviceId=...
+    W->>API: GET /ws/signaling?sessionId=...
 
     F->>API: POST /auth/login
     API-->>F: access token + refresh token
@@ -85,7 +85,7 @@ sequenceDiagram
     API->>R: resolve code
     API->>DB: create viewer participant
     API-->>F: session
-    F->>API: GET /ws/signaling?sessionId=...&deviceId=...
+    F->>API: GET /ws/signaling?sessionId=...
 
     W->>API: webrtc.offer targeted to viewer
     API-->>F: webrtc.offer
