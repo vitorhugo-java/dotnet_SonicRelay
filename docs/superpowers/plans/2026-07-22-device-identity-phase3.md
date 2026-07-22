@@ -20,6 +20,14 @@ blocking requirement.
 for contract verification/documentation. Full design:
 `docs/superpowers/specs/2026-07-22-device-identity-phase3-design.md`.
 
+**Execution boundary:** Run Tasks 1–3 in a dedicated `windows_SonicRelay`
+Codex Cloud environment and PR, and Tasks 4–6 in a dedicated
+`flutter_SonicRelay` environment and PR. This backend environment owns only
+the design/plan plus Task 7 backend verification or a separately justified
+backend contract change. Do not commit or publish client changes from the
+backend environment, and do not push directly from a sandbox; PR publication
+uses each environment's Codex Cloud GitHub integration.
+
 ## Global constraints
 
 - Never send `deviceId` in session create/join bodies or the signaling query.
@@ -48,7 +56,8 @@ for contract verification/documentation. Full design:
 3. Implement `/api/devices/bootstrap` and `/api/devices/token` calls for
    `windows_publisher/windows` and a serialized token provider.
 4. Adapt bearer-header resolution to the provider and rerun focused tests.
-5. Commit the green increment in the Windows repository.
+5. Commit the green increment locally; update the Windows PR through that
+   repository's Codex Cloud GitHub integration.
 
 ## Task 2: Windows Phase 2 session/signaling/TURN contracts
 
@@ -96,7 +105,8 @@ for contract verification/documentation. Full design:
 2. Implement `flutter_viewer` bootstrap with runtime `android|ios` platform.
 3. Replace refresh-token behavior with `/api/devices/token`; never call Identity
    login/refresh as fallback.
-4. Rerun focused tests and commit in the Flutter repository.
+4. Rerun focused tests and commit locally; update the Flutter PR through that
+   repository's Codex Cloud GitHub integration.
 
 ## Task 5: Flutter Phase 2 session/signaling/TURN contracts
 
@@ -138,5 +148,6 @@ for contract verification/documentation. Full design:
    revocation as specified in the design.
 4. Update both client READMEs with actual first-run, secure-storage, reset,
    pairing, and session-code behavior; correct backend docs only if stale.
-5. Run formatting/diff checks, commit each repository, and prepare PR metadata
-   without issue-closing keywords.
+5. In each repository's own Codex Cloud environment, run formatting/diff
+   checks, commit locally, and create or update that repository's PR through
+   the GitHub integration without issue-closing keywords.

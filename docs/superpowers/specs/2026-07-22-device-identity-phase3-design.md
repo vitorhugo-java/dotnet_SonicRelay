@@ -17,6 +17,22 @@ This is a cross-repository change involving:
 - this backend only for contract-level end-to-end verification and
   documentation. No backend production change is currently required.
 
+## Repository and pull-request boundaries
+
+Each repository is implemented and reviewed independently in its own Codex
+Cloud environment and pull request:
+
+- this backend PR contains the Phase 3 design, implementation plan, and any
+  backend contract/documentation changes that later prove necessary;
+- Windows production code and tests belong only in a `windows_SonicRelay` PR;
+- Flutter production code and tests belong only in a `flutter_SonicRelay` PR.
+
+The backend environment may inspect the client repositories to validate the
+design, but it must not commit, push, or publish their changes. Likewise,
+client PRs must not copy backend or sibling-client changes into their trees.
+The cross-repository acceptance flow is coordinated across those PRs after
+their repository-local focused tests pass.
+
 The Phase 2 branch was compared with GitHub before this design was written.
 Its head is `9b9a491`, matching PR #28, and it is 24 commits ahead of and zero
 commits behind `main` at `82a10fd`. The Windows and Flutter inspections used
