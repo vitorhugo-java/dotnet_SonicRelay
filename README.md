@@ -83,6 +83,8 @@ Set the following high-entropy secrets in production deployments (outside Git):
 
 See [device identity configuration](docs/device-identity.md#configuration) for details on the `DeviceIdentity:*` keys.
 
+`DeviceIdentity:TokenSigningKey` (and the other `DeviceIdentity:*` keys above) are effectively required in any real deployment now: sessions, signaling and TURN credential issuance authenticate exclusively via `DeviceBearer` and have no fallback authentication path, so `DeviceIdentity:Enabled=false` no longer provides a way to run the product without configuring them — it only removes the bootstrap/token/rotate-credential/revoke/pairing HTTP surface.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
